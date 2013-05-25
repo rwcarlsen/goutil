@@ -25,8 +25,14 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if err := ledger.Convert(f, w, &ledger.TabDelim{}); err != nil {
+	journal, err := ledger.DecodeTabDelim(f)
+	if err != nil {
 		log.Fatal(err)
 	}
+
+	if err := journal.WriteTo(w); err != nil {
+		log.Fatal(err)
+	}
+
 	fmt.Println("Success.")
 }

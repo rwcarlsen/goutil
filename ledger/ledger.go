@@ -6,11 +6,9 @@ import (
 	"io"
 	"io/ioutil"
 	"strings"
+	"encoding/csv"
+	"time"
 )
-
-type Extracter interface {
-	Extract(r io.Reader) (Journal, error)
-}
 
 type Entry interface {
 	Print(w io.Writer) error
@@ -52,24 +50,19 @@ type Posting struct {
 }
 
 func (p *Posting) Print(w io.Writer) error {
-	fmt.Fprintf(w, "    %v    $%v\n", p.Account, p.Amount)
+	if len(p.Amount) == 0 {
+		fmt.Fprintf(w, "    %v\n", p.Account)
+	} else {
+		fmt.Fprintf(w, "    %v    $%v\n", p.Account, p.Amount)
+	}
+
 	for _, comm := range p.Comment {
 		fmt.Fprintf(w, "        ; %v\n", comm)
 	}
 	return nil
 }
 
-func Convert(r io.Reader, w io.Writer, e Extracter) error {
-	journal, err := e.Extract(r)
-	if err != nil {
-		return err
-	}
-	return journal.WriteTo(w)
-}
-
-type TabDelim struct { }
-
-func (td *TabDelim) Extract(r io.Reader) (Journal, error) {
+func DecodeTabDelim(r io.Reader) (Journal, error) {
 	// "Trans #"	"Date"	"Cleared"	"Name"	"Memo"	"Account"	"Debit"	"Credit"
 	data, err := ioutil.ReadAll(r)
 	if err != nil {
@@ -138,5 +131,37 @@ func stripQuotes(str string) string {
 		return txt
 	}
 	return str
+}
+
+func DecodeCsv(r io.Reader, header bool) (Journal, error) {
+	// "Account","Date","Check","Description","Amount"
+	csvr := csv.NewReader(r)
+	records, err := csvr.ReadAll()
+	if err != nil {
+		return nil, err
+	}
+
+	if header {
+		records = records[1:]
+	}
+
+	journal := Journal{}
+	for _, rec := range records {
+		date, err := time.Parse("01/02/2006", rec[1])
+		if err != nil {
+			fmt.Printf("rec[1]=%v\n", rec[1])
+			return nil, err
+		}
+		p := &Posting{Account: "??", Amount: rec[4]}
+
+		trans := &Transaction{
+			Date: date.Format("2006/01/02"),
+			Description: rec[3],
+		}
+		trans.Post(p)
+
+		journal = append(journal, trans)
+	}
+	return journal, nil
 }
 
